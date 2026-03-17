@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run FMU Simulations"
+  short_description: "Inspect FMUs, run them, export data, and plot signals."
+  default_prompt: "Use $run-fmu-simulations to inspect an FMU, simulate it, export CSV data, and plot selected variables."
