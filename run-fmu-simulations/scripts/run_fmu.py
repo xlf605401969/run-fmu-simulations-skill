@@ -4,10 +4,16 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from ctypes import c_int
 from pathlib import Path
 from typing import Any
+
+import numpy as np
+
+
+ARRAY_COLUMN_RE = re.compile(r"^(?P<name>.+)\[(?P<index>\d+(?:,\d+)*)\]$")
 
 
 def parse_start_values(items: list[str]) -> dict[str, object]:
@@ -42,11 +48,9 @@ def load_fmpy():
     try:
         from fmpy import simulate_fmu
         from fmpy.model_description import read_model_description
-        from fmpy.util import read_csv as read_fmpy_csv
-        from fmpy.util import write_csv as write_fmpy_csv
     except ImportError as exc:
         raise RuntimeError("fmpy is required to run FMU simulations. Install it with 'pip install fmpy'.") from exc
-    return simulate_fmu, read_model_description, read_fmpy_csv, write_fmpy_csv
+    return simulate_fmu, read_model_description
 
 
 def default_outputs(model_description) -> list[str]:
@@ -88,15 +92,14 @@ def infer_communication_step_size(model_description, start_time: float, stop_tim
 
 
 def patch_fmpy_input_support() -> None:
-    import numpy as np
     import fmpy.fmi3 as fmi3
     import fmpy.simulation as sim
 
-    if getattr(sim.Input, "_codex_array_patch", False):
+    if getattr(sim.Input, "_codex_mixed_shape_patch", False):
         return
 
     class CompatibleInput(sim.Input):
-        _codex_array_patch = True
+        _codex_mixed_shape_patch = True
 
         def __init__(self, fmu, modelDescription, signals, set_input_derivatives=False):
             self.fmu = fmu
@@ -151,7 +154,8 @@ def patch_fmpy_input_support() -> None:
 
                 setter, value_type = setters[variable.type]
                 raw_values = np.asarray(signals[variable.name], dtype=value_type)
-                n_values = int(np.prod(variable.shape)) if getattr(variable, "shape", None) else 1
+                shape = tuple(getattr(variable, "shape", ()) or ())
+                n_values = int(np.prod(shape)) if shape else 1
                 table = raw_values.reshape((len(self.t), n_values)).T
                 vrs = (sim.c_uint32 * 1)(variable.valueReference)
                 values = (value_type * n_values)()
@@ -198,7 +202,75 @@ def patch_fmpy_input_support() -> None:
     sim.Input = CompatibleInput
 
 
-def load_input_signals(input_path: Path, model_description, read_fmpy_csv):
+def scalar_dtype_for(variable) -> Any:
+    variable_type = getattr(variable, "type", None)
+    if variable_type in {"Float32"}:
+        return np.float32
+    if variable_type in {"Real", "Float64"}:
+        return np.float64
+    if variable_type in {"Int8", "Integer", "Enumeration"}:
+        return np.int32 if variable_type in {"Integer", "Enumeration"} else np.int8
+    if variable_type == "UInt8":
+        return np.uint8
+    if variable_type == "Int16":
+        return np.int16
+    if variable_type == "UInt16":
+        return np.uint16
+    if variable_type == "Int32":
+        return np.int32
+    if variable_type == "UInt32":
+        return np.uint32
+    if variable_type == "Int64":
+        return np.int64
+    if variable_type == "UInt64":
+        return np.uint64
+    if variable_type == "Boolean":
+        return np.bool_
+    raise ValueError(f"Unsupported FMU variable type for CSV I/O: {variable_type}")
+
+
+def parse_csv_scalar(raw: str, variable) -> Any:
+    variable_type = getattr(variable, "type", None)
+    if variable_type == "Boolean":
+        lowered = raw.strip().lower()
+        if lowered in {"true", "1"}:
+            return True
+        if lowered in {"false", "0"}:
+            return False
+        raise ValueError(f'Value "{raw}" is not a valid Boolean for variable "{variable.name}".')
+    if variable_type in {"Integer", "Enumeration", "Int8", "UInt8", "Int16", "UInt16", "Int32", "UInt32", "Int64", "UInt64"}:
+        return int(raw)
+    return float(raw)
+
+
+def signal_column_names(variable) -> list[str]:
+    shape = tuple(getattr(variable, "shape", ()) or ())
+    if not shape:
+        return [variable.name]
+
+    names: list[str] = []
+    for index in np.ndindex(shape):
+        suffix = ",".join(str(part + 1) for part in index)
+        names.append(f"{variable.name}[{suffix}]")
+    return names
+
+
+def normalize_output_value(value: Any) -> list[Any]:
+    if np.isscalar(value) or getattr(value, "shape", ()) == ():
+        return [value.item() if hasattr(value, "item") else value]
+    flat = np.asarray(value).reshape(-1)
+    return [item.item() if hasattr(item, "item") else item for item in flat]
+
+
+def write_csv_scalar(value: Any) -> str:
+    if isinstance(value, (bool, np.bool_)):
+        return "true" if value else "false"
+    if isinstance(value, (float, np.floating)):
+        return f"{float(value):.16g}"
+    return str(value)
+
+
+def load_input_signals(input_path: Path, model_description):
     if not input_path.is_file():
         raise FileNotFoundError(f"Input signal file not found: {input_path}")
 
@@ -216,25 +288,100 @@ def load_input_signals(input_path: Path, model_description, read_fmpy_csv):
                 if raw is None or raw == "":
                     raise ValueError(f"Input signal CSV contains an empty value in column '{field}'.")
 
-    signals = read_fmpy_csv(str(input_path), structured=True)
-    signal_names = [name for name in signals.dtype.names if name != "time"]
+    input_variables = {
+        variable.name: variable
+        for variable in model_description.modelVariables
+        if getattr(variable, "causality", None) == "input"
+    }
+
+    signal_names = [name for name in raw_columns if name != "time"]
     if not signal_names:
         raise ValueError("Input signal CSV must contain at least one FMU input column.")
 
-    missing = [name for name in signal_names if name not in variable_map]
+    grouped_columns: dict[str, list[tuple[tuple[int, ...], str]]] = {}
+    missing: list[str] = []
+    for column in signal_names:
+        match = ARRAY_COLUMN_RE.match(column)
+        if match:
+            base_name = match.group("name")
+            raw_index = tuple(int(part) for part in match.group("index").split(","))
+            zero_based_index = tuple(part - 1 for part in raw_index)
+            grouped_columns.setdefault(base_name, []).append((zero_based_index, column))
+        else:
+            base_name = column
+            grouped_columns.setdefault(base_name, []).append(((), column))
+
+        if base_name not in variable_map:
+            missing.append(column)
+
     if missing:
         raise ValueError(f"Input signal columns are not FMU variables: {', '.join(missing)}")
 
-    non_inputs = [name for name in signal_names if getattr(variable_map[name], "causality", None) != "input"]
+    non_inputs = [name for name in grouped_columns if getattr(variable_map[name], "causality", None) != "input"]
     if non_inputs:
         raise ValueError(f"Input signal columns must map to FMU input variables: {', '.join(non_inputs)}")
 
+    dtype: list[tuple[Any, ...]] = [("time", np.float64)]
+    for base_name, columns in grouped_columns.items():
+        variable = input_variables[base_name]
+        shape = tuple(getattr(variable, "shape", ()) or ())
+        if shape:
+            expected = set(np.ndindex(shape))
+            actual = {index for index, _ in columns}
+            if actual != expected:
+                expected_names = ", ".join(signal_column_names(variable))
+                raise ValueError(f'Array input "{base_name}" must provide exactly these columns: {expected_names}')
+            dtype.append((base_name, scalar_dtype_for(variable), shape))
+        else:
+            if len(columns) != 1 or columns[0][0] != ():
+                raise ValueError(f'Scalar input "{base_name}" must use the column name "{base_name}".')
+            dtype.append((base_name, scalar_dtype_for(variable)))
+
+    rows: list[tuple[Any, ...]] = []
+    with input_path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        assert reader.fieldnames is not None
+        for row in reader:
+            record: list[Any] = [float(row["time"])]
+            for base_name, columns in grouped_columns.items():
+                variable = input_variables[base_name]
+                shape = tuple(getattr(variable, "shape", ()) or ())
+                if shape:
+                    values = np.empty(shape, dtype=scalar_dtype_for(variable))
+                    for index, column_name in columns:
+                        values[index] = parse_csv_scalar(row[column_name], variable)
+                    record.append(values)
+                else:
+                    record.append(parse_csv_scalar(row[columns[0][1]], variable))
+            rows.append(tuple(record))
+
+    signals = np.array(rows, dtype=np.dtype(dtype))
     return signals, signal_names
 
 
-def write_csv_result(result, output_path: Path, write_fmpy_csv) -> int:
+def write_csv_result(result, output_path: Path) -> int:
     ensure_parent(output_path)
-    write_fmpy_csv(str(output_path), result)
+    columns: list[str] = []
+    for name in result.dtype.names:
+        sample = result[name][0]
+        if name == "time":
+            columns.append("time")
+            continue
+        if getattr(sample, "shape", ()) == ():
+            columns.append(name)
+            continue
+        for index in np.ndindex(sample.shape):
+            suffix = ",".join(str(part + 1) for part in index)
+            columns.append(f"{name}[{suffix}]")
+
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(columns)
+        for i in range(len(result)):
+            row: list[str] = []
+            for name in result.dtype.names:
+                row.extend(write_csv_scalar(value) for value in normalize_output_value(result[i][name]))
+            writer.writerow(row)
     return len(result)
 
 
@@ -264,7 +411,7 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     try:
-        simulate_fmu, read_model_description, read_fmpy_csv, write_fmpy_csv = load_fmpy()
+        simulate_fmu, read_model_description = load_fmpy()
         patch_fmpy_input_support()
         start_values = parse_start_values(args.start_value)
         fmu_path = Path(args.fmu)
@@ -275,7 +422,7 @@ def main() -> int:
         input_signals = None
         input_columns: list[str] = []
         if args.input_file:
-            input_signals, input_columns = load_input_signals(Path(args.input_file), model_description, read_fmpy_csv)
+            input_signals, input_columns = load_input_signals(Path(args.input_file), model_description)
         outputs = args.output_vars or default_outputs(model_description)
         effective_step_size = args.step_size
         effective_communication_step_size = args.communication_step_size
@@ -311,7 +458,7 @@ def main() -> int:
             **simulate_kwargs,
         )
 
-        row_count = write_csv_result(result, output_path, write_fmpy_csv)
+        row_count = write_csv_result(result, output_path)
         metadata_path = output_path.with_suffix(".json")
         metadata = {
             "fmu_path": str(fmu_path),
