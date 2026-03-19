@@ -101,6 +101,39 @@ def patch_fmpy_input_support() -> None:
     class CompatibleInput(sim.Input):
         _codex_mixed_shape_patch = True
 
+        @staticmethod
+        def findEvents(signals, modelDescription):
+            """Find time events for scalar and array-valued input signals."""
+
+            t_event = {float("Inf")}
+
+            if signals.size < 2:
+                return np.array(list(t_event))
+
+            t = signals[signals.dtype.names[0]]
+
+            # Continuous inputs can encode events by repeating the same timestamp.
+            time_event_indices = np.flatnonzero(np.diff(t) == 0)
+            t_event.update(t[time_event_indices])
+
+            for variable in modelDescription.modelVariables:
+                if variable.name not in signals.dtype.names or variable.variability not in ["discrete", "tunable"]:
+                    continue
+
+                values = np.asarray(signals[variable.name])
+                if values.shape[0] < 2:
+                    continue
+
+                if values.ndim == 1:
+                    changed = np.flatnonzero(np.diff(values) != 0)
+                else:
+                    diff = np.diff(values, axis=0)
+                    changed = np.flatnonzero(np.any(diff != 0, axis=tuple(range(1, diff.ndim))))
+
+                t_event.update(t[changed + 1])
+
+            return np.array(sorted(t_event))
+
         def __init__(self, fmu, modelDescription, signals, set_input_derivatives=False):
             self.fmu = fmu
 
@@ -109,7 +142,7 @@ def patch_fmpy_input_support() -> None:
                 return
 
             self.t = signals[signals.dtype.names[0]]
-            self.t_events = sim.Input.findEvents(signals, modelDescription)
+            self.t_events = self.findEvents(signals, modelDescription)
             self.set_input_derivatives = set_input_derivatives
 
             is_fmi1 = isinstance(fmu, sim._FMU1)

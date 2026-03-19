@@ -18,7 +18,7 @@ time,u,speed,torque
 
 `run_fmu.py` defaults to exporting FMU `output`, `local`, and `input` variables. If `--output-vars` is supplied, only the listed variables are recorded.
 
-Array-valued variables are flattened to FMI cross-check style column names in the CSV:
+Array-valued variables are flattened to 1-based FMI cross-check style column names in the CSV. One-dimensional arrays use names like `Vabc[1]`; multi-dimensional arrays use comma-separated indices like `A[1,1]`.
 
 ```text
 time,Vabc[1],Vabc[2],Vabc[3],Uabc[1],Uabc[2],Uabc[3]
@@ -43,7 +43,10 @@ time,Vabc[1],Vabc[2],Vabc[3],Tm
 
 Parsing rules:
 
-- Scalar and array inputs both use FMI cross-check CSV naming. Array elements must be written as 1-based indexed columns like `name[1]`, `name[2]`
+- Scalar and array inputs both use FMI cross-check CSV naming
+- Array elements must use 1-based indices
+- One-dimensional arrays use column names like `name[1]`, `name[2]`
+- Multi-dimensional arrays use column names like `name[1,1]`, `name[1,2]`
 - Empty cells are rejected
 - Columns that are not FMU input variables are rejected
 

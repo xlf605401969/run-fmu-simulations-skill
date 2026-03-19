@@ -52,13 +52,13 @@ Notes:
 
 - Install `fmpy` before running simulations.
 - Use `--input-file` to provide time-varying input signals as CSV with a `time` column and one column per FMU input variable.
-- For array variables, use FMI cross-check column names such as `Vabc[1]`, `Vabc[2]`, `Vabc[3]`.
+- For array variables, use 1-based FMI cross-check style column names. One-dimensional arrays look like `Vabc[1]`, `Vabc[2]`, `Vabc[3]`; multi-dimensional arrays use comma-separated indices such as `A[1,1]`, `A[1,2]`.
 - Use `--communication-step-size` for CoSimulation FMUs. This maps to FMPy's `output_interval`, which is the communication step passed into `doStep()`.
 - Use `--step-size` only for ModelExchange FMUs, where it controls the solver step size.
 - If no step size is passed, `run_fmu.py` prints the effective step that will actually be used and writes it to the sidecar JSON metadata.
 - Pass repeated `--start-value name=value` pairs to override FMU start values.
 - By default the output CSV includes `time` plus FMU `output`, `local`, and `input` variables, so input traces are captured together with outputs.
-- Array outputs are flattened to CSV columns like `Uabc[1]`, `Uabc[2]`, `Uabc[3]`.
+- Array outputs are flattened to CSV columns using the same 1-based naming rule, for example `Uabc[1]`, `Uabc[2]`, `Uabc[3]` or `A[1,1]`, `A[1,2]`.
 - Pass repeated `--output-vars` names to limit exported columns explicitly.
 - A sidecar JSON file is written next to the CSV with run metadata.
 

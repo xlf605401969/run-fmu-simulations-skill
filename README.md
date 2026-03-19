@@ -64,7 +64,7 @@ Current capabilities:
 - 对 `ModelExchange` FMU，使用 `--step-size`
 - 如果没有显式传步长，脚本会输出并记录最终实际使用的步长
 - 对 `modelDescription.xml` 不完全规范的 FMU，可以使用 `--no-validate`
-- 数组输入和输出使用 FMI cross-check 风格列名，例如 `Vabc[1]`、`Vabc[2]`、`Vabc[3]`
+- 数组输入和输出使用 1-based 的 FMI cross-check 风格列名；一维数组例如 `Vabc[1]`、`Vabc[2]`、`Vabc[3]`，多维数组例如 `A[1,1]`、`A[1,2]`
 
 A few practical notes:
 
@@ -72,4 +72,4 @@ A few practical notes:
 - use `--step-size` for `ModelExchange` FMUs
 - if no step is passed, the script reports and records the effective step it actually uses
 - use `--no-validate` for FMUs with imperfect `modelDescription.xml`
-- array inputs and outputs use FMI cross-check style column names such as `Vabc[1]`, `Vabc[2]`, and `Vabc[3]`
+- array inputs and outputs use 1-based FMI cross-check style column names; one-dimensional arrays look like `Vabc[1]`, `Vabc[2]`, and `Vabc[3]`, while multi-dimensional arrays look like `A[1,1]` and `A[1,2]`
