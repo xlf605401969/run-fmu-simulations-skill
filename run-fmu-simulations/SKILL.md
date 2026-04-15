@@ -25,8 +25,8 @@ Use `<skill-dir>/scripts/inspect_fmu.py` for both interface and mode inspection.
 Commands:
 
 ```powershell
-python <skill-dir>/scripts/inspect_fmu.py interface <model-dir>/model.fmu
-python <skill-dir>/scripts/inspect_fmu.py modes <model-dir>/model.fmu
+python <skill-dir>/scripts/inspect_fmu.py interface <target-model-dir>/model.fmu
+python <skill-dir>/scripts/inspect_fmu.py modes <target-model-dir>/model.fmu
 ```
 
 Use `--format json` when the result needs to be consumed programmatically.
@@ -38,9 +38,9 @@ Use `<skill-dir>/scripts/run_fmu.py`.
 Example:
 
 ```powershell
-python <skill-dir>/scripts/run_fmu.py <model-dir>/model.fmu `
-  --output <data_dir>/result.csv `
-  --input-file <data_dir>/inputs.csv `
+python <skill-dir>/scripts/run_fmu.py <target-model-dir>/model.fmu `
+  --output <target-data-dir>/result.csv `
+  --input-file <target-data-dir>/inputs.csv `
   --start-time 0 `
   --stop-time 10 `
   --communication-step-size 0.01 `
@@ -78,15 +78,15 @@ Use `<skill-dir>/scripts/data_tools.py`.
 Examples:
 
 ```powershell
-python <skill-dir>/scripts/data_tools.py extract <data_dir>/result.csv --columns time speed --output <data_dir>/speed.csv
-python <skill-dir>/scripts/data_tools.py plot <data_dir>/result.csv --y speed torque --output <plots_dir>/speed-torque.png
+python <skill-dir>/scripts/data_tools.py extract <target-data-dir>/result.csv --columns time speed --output <target-data-dir>/speed.csv
+python <skill-dir>/scripts/data_tools.py plot <target-data-dir>/result.csv --y speed torque --output <target-plots-dir>/speed-torque.png
 ```
 
 Use `--start-time` and `--stop-time` on `extract` or `plot` to limit the time window. Use `--format json` on `extract` for machine-readable output.
 
 ## Data Format
 
-Read [references/data-format.md](references/data-format.md) when you need the CSV schema, sidecar metadata schema, or filtering behavior.
+Read [<skill-dir>/references/data-format.md](references/data-format.md) when you need the CSV schema, sidecar metadata schema, or filtering behavior.
 
 ## Script Map
 
