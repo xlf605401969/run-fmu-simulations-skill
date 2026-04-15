@@ -20,27 +20,27 @@ Prefer the scripts over ad-hoc Python snippets so outputs stay consistent and re
 
 ## Inspect the FMU
 
-Use `scripts/inspect_fmu.py` for both interface and mode inspection.
+Use `<skill-dir>/scripts/inspect_fmu.py` for both interface and mode inspection.
 
 Commands:
 
 ```powershell
-python scripts/inspect_fmu.py interface path\to\model.fmu
-python scripts/inspect_fmu.py modes path\to\model.fmu
+python <skill-dir>/scripts/inspect_fmu.py interface <model-dir>/model.fmu
+python <skill-dir>/scripts/inspect_fmu.py modes <model-dir>/model.fmu
 ```
 
 Use `--format json` when the result needs to be consumed programmatically.
 
 ## Run the FMU
 
-Use `scripts/run_fmu.py`.
+Use `<skill-dir>/scripts/run_fmu.py`.
 
 Example:
 
 ```powershell
-python scripts/run_fmu.py path\to\model.fmu `
-  --output data\result.csv `
-  --input-file data\inputs.csv `
+python <skill-dir>/scripts/run_fmu.py <model-dir>/model.fmu `
+  --output <data_dir>/result.csv `
+  --input-file <data_dir>/inputs.csv `
   --start-time 0 `
   --stop-time 10 `
   --communication-step-size 0.01 `
@@ -73,13 +73,13 @@ time,Vabc[1],Vabc[2],Vabc[3],Tm
 
 ## Extract or Plot Recorded Data
 
-Use `scripts/data_tools.py`.
+Use `<skill-dir>/scripts/data_tools.py`.
 
 Examples:
 
 ```powershell
-python scripts/data_tools.py extract data\result.csv --columns time speed --output data\speed.csv
-python scripts/data_tools.py plot data\result.csv --y speed torque --output plots\speed-torque.png
+python <skill-dir>/scripts/data_tools.py extract <data_dir>/result.csv --columns time speed --output <data_dir>/speed.csv
+python <skill-dir>/scripts/data_tools.py plot <data_dir>/result.csv --y speed torque --output <plots_dir>/speed-torque.png
 ```
 
 Use `--start-time` and `--stop-time` on `extract` or `plot` to limit the time window. Use `--format json` on `extract` for machine-readable output.
@@ -90,9 +90,9 @@ Read [references/data-format.md](references/data-format.md) when you need the CS
 
 ## Script Map
 
-- `scripts/inspect_fmu.py`: Read `modelDescription.xml` directly from the FMU zip and report metadata, variables, and supported modes. No third-party dependencies required.
-- `scripts/run_fmu.py`: Run the FMU with `fmpy`, export a CSV, and save run metadata to JSON.
-- `scripts/data_tools.py`: Extract filtered data from the CSV and optionally generate plots with `matplotlib`.
+- `<skill-dir>/scripts/inspect_fmu.py`: Read `modelDescription.xml` directly from the FMU zip and report metadata, variables, and supported modes. No third-party dependencies required.
+- `<skill-dir>/scripts/run_fmu.py`: Run the FMU with `fmpy`, export a CSV, and save run metadata to JSON.
+- `<skill-dir>/scripts/data_tools.py`: Extract filtered data from the CSV and optionally generate plots with `matplotlib`.
 
 ## Failure Handling
 
